@@ -1,5 +1,6 @@
 import type { BunPlugin } from 'bun';
 import * as compiler from '@vue/compiler-sfc';
+import * as fs from 'fs';
 
 interface VuePluginOptions {
   prodDevTools?: boolean;
@@ -15,6 +16,11 @@ function setVueCompileTimeFlags(build: Bun.PluginBuilder, options: VuePluginOpti
   build.config.define['__VUE_OPTIONS_API__'] = options.optionsApi === false ? 'false' : 'true';
   build.config.define['__VUE_PROD_HYDRATION_MISMATCH_DETAILS__'] = options.prodHydrationMismatchDetails === false ? 'false' : 'true';
 }
+
+try {
+  const ts = await import('typescript');
+  compiler.registerTS(() => ts);
+} catch {}
 
 export default function plugin(options?: VuePluginOptions): BunPlugin {
   const opts = options || {};
@@ -97,6 +103,8 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
           filename: args.path,
           compilerOptions: {
             bindingMetadata: script.bindings,
+            // Enable TypeScript support in templates
+            expressionPlugins: script.lang === 'ts' ? ['typescript'] : undefined,
           }
         })
 
@@ -152,7 +160,25 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
         idMap.set(args.path, id);
 
         if (descriptor.script || descriptor.scriptSetup) {
-          const script = compiler.compileScript(descriptor, {id});
+          const logError = <T>(message: string, value: T): T => {
+            console.error(`[vue-plugin:error] ${message}`);
+            return value;
+          };
+          const script = compiler.compileScript(descriptor, {
+            id,
+            // Provide fs access for type imports in script compilation
+            fs: {
+              fileExists: fs.existsSync,
+              // Prevent error: EISDIR: illegal operation on a directory, read
+              readFile: (file: string) => {
+                if (fs.lstatSync(file).isDirectory()) {
+                  return fs.existsSync(file + '/index.ts') ? fs.readFileSync(file + '/index.ts', 'utf-8') : fs.existsSync(file + '/index.d.ts') ? fs.readFileSync(file + '/index.d.ts', 'utf-8') : logError<string>('Could not resolve directory', '')
+                } else {
+                  return fs.readFileSync(file, 'utf-8');
+                }
+              },
+            }
+          });
           scriptMap.set(args.path, script);
         } else {
           // Fallthrough when <script> is not present
@@ -232,4 +258,3 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
     }
   }
 }
-

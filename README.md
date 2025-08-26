@@ -25,8 +25,9 @@ If you want to have Vue's types, add a `vue-shim.d.ts` file to the root of your 
 ```ts
 // vue-shim.d.ts
 declare module '*.vue' {
-  import Vue from 'vue';
-  export default Vue;
+  import type { DefineComponent } from 'vue';
+  const component: DefineComponent<object, object, any>;
+  export default component;
 }
 ```
 
@@ -41,7 +42,7 @@ import vuePlugin from '@eckidevs/bun-plugin-vue'
 
 Bun.build({
   // index.html Imports main.ts where App.vue is setup
-  entrypoints: ['./index.html'], 
+  entrypoints: ['./index.html'],
   outdir: './dist',
   plugins: [vuePlugin()],
 })
