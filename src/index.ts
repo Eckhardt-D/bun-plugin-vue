@@ -35,9 +35,7 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
   return {
     name: 'vue',
     setup(build) {
-      if (Bun.env.NODE_ENV !== 'production') {
-        setVueCompileTimeFlags(build, opts);
-      }
+      setVueCompileTimeFlags(build, opts);
 
       build.onResolve({ filter: /\.vue/ }, (args) => {
         const paramsString = args.path.split('?')[1];
@@ -172,7 +170,11 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
               // Prevent error: EISDIR: illegal operation on a directory, read
               readFile: (file: string) => {
                 if (fs.lstatSync(file).isDirectory()) {
-                  return fs.existsSync(file + '/index.ts') ? fs.readFileSync(file + '/index.ts', 'utf-8') : fs.existsSync(file + '/index.d.ts') ? fs.readFileSync(file + '/index.d.ts', 'utf-8') : logError<string>('Could not resolve directory', '')
+                  return fs.existsSync(file + '/index.ts')
+                    ? fs.readFileSync(file + '/index.ts', 'utf-8')
+                    : fs.existsSync(file + '/index.d.ts')
+                      ? fs.readFileSync(file + '/index.d.ts', 'utf-8')
+                        : logError<string>('Could not resolve directory', '')
                 } else {
                   return fs.readFileSync(file, 'utf-8');
                 }
@@ -218,37 +220,22 @@ export default function plugin(options?: VuePluginOptions): BunPlugin {
         }
       });
 
-      const replacedMap = new Map<string, string>();
-
+      // This should be removed once Bun supports build.config.define in dev server
       build.onLoad({ filter: /node_modules\/@vue\/(.*)\.js$/ }, async (args) => {
         const file = Bun.file(args.path);
         let source = await file.text();
 
-        const replaced = replacedMap.get(args.path);
+        const vueFlags = [
+          ['__VUE_PROD_DEVTOOLS__', opts.prodDevTools ? 'true' : 'false'],
+          ['__VUE_OPTIONS_API__', opts.optionsApi ? 'true' : 'false'],
+          ['__VUE_PROD_HYDRATION_MISMATCH_DETAILS__', opts.prodHydrationMismatchDetails ? 'true' : 'false'],
+        ];
 
-        if (replaced) {
-          return {
-            contents: replaced,
-            loader: 'js',
-          }
+        // Replacement is not cached because files can be multiple KiB big
+        // and there are only a few Vue files in node_modules.
+        for (const [flag, value] of vueFlags) {
+          source = source.replaceAll(flag!, value!);
         }
-
-        // Replace Vue Feature Flags
-        // This is a workaround for Bun's lack of support for define in dev
-        const vueFlags = {
-          '__VUE_PROD_DEVTOOLS__': opts.prodDevTools ? 'true' : 'false',
-          '__VUE_OPTIONS_API__': opts.optionsApi ? 'true' : 'false',
-          '__VUE_PROD_HYDRATION_MISMATCH_DETAILS__': opts.prodHydrationMismatchDetails ? 'true' : 'false',
-        };
-
-        Object.entries(vueFlags).forEach(([key, value]) => {
-          const rgx = new RegExp(`${key}`, 'g');
-          source = source.replace(rgx, value);
-        });
-
-        // TODO: These are big strings being cached
-        // We should consider a more efficient caching strategy
-        replacedMap.set(args.path, source);
 
         return {
           contents: source,
