@@ -1,6 +1,6 @@
 {
   "name": "@eckidevs/bun-plugin-vue",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "module": "src/index.ts",
   "main": "src/index.ts",
   "type": "module",
